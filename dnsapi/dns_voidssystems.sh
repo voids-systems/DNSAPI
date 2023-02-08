@@ -122,7 +122,7 @@ _create_record() {
   domain_data='{"type":"A", "hostname":"${_domhost}", "target":"${END_IP}"}'
   txt_data='{"type":"TXT", "hostname":"${_txthost}", "target":"${txtvalue}"}'
 
-  _debug "API ENDPOINTS ${api} WITH HEADER ${header} AND DATA "
+  _debug "API ENDPOINTS ${API} WITH HEADER ${header} AND DATA "
 
   response="$(_post "$API" "$header" "$domain_data")"
   if [ "$?" != "0" ]; then
@@ -140,17 +140,20 @@ _create_record() {
 }
 
 _remove_record() {
-  server_record="https://api.corp-jamo.tech/dns/v1/records/remove.php?access=$JTECH_KEY&hostname=$_subhost&target=$JTECH_ENDIP&type=A"
-  txt_record="https://api.corp-jamo.tech/dns/v1/records/remove.php?access=$JTECH_KEY&hostname=$_txthost&target=$txtvalue&type=TXT"
-  _debug "API ENDPOINTS $server_record $txt_record"
+  header="x-api-key: ${CLIENT_API_KEY}"
 
-  response="$(_get "$server_record")"
+  domain_data='{"type":"A", "hostname":"${_domhost}"}'
+  txt_data='{"type":"TXT", "hostname":"${_txthost}"}'
+
+  _debug "API ENDPOINTS ${API} WITH HEADER ${header} AND DATA "
+
+  response="$(_delete "$API" "$header" "$domain_data")"
   if [ "$?" != "0" ]; then
     _err "error"
     return 1
   fi
 
-  response="$(_get "$txt_record")"
+  response="$(_delete "$API" "$header" "$txt_data")"
   if [ "$?" != "0" ]; then
     _err "error"
     return 1
