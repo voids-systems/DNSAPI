@@ -45,54 +45,70 @@ dns_voidssystems_rm() {
 ####################  Private functions below ##################################
 
 _check_config() {
-  if command -v python &>/dev/null; then
-    source <(python ../config.py)
-  else
-    _err "Python is not installed. Please install it to use this script."
-    exit 1
-  fi
-
   if [ -z "$END_IP" ]; then
-    _err "You need to specify an end IP in the config.ini file."
-    return 1
+    read -p "Enter end IP for record: " END_IP
+    if [ -z "$END_IP" ]; then
+      _err "No end IP found for record."
+      return 1
+    fi
+    echo 'export END_IP="'$END_IP'"' >> ~/.bashrc
   fi
-  _saveaccountconf_mutable END_IP "$END_IP"
 
   if [ -z "$CLIENT_API_KEY" ]; then
-    _err "You need to specify a client API Key in the config.ini file."
-    return 1
+    read -p "Enter client API key: " CLIENT_API_KEY
+    if [ -z "$CLIENT_API_KEY" ]; then
+      _err "Invalid API key."
+      return 1
+    fi
+    echo 'export CLIENT_API_KEY="'$CLIENT_API_KEY'"' >> ~/.bashrc
   fi
-  _saveaccountconf_mutable CLIENT_API_KEY "$CLIENT_API_KEY"
 }
 
 _get_root() {
-  domain=$fulldomain
-  subdomain=${domain%.voids.systems}
-  txtdomain="_acme-challenge.${domain}"
-
-  if [ -z "$domain" ] || [ -z "$subdomain" ] || [ -z "$txtdomain" ]; then
+  txtdomain=$fulldomain
+  domain=$(echo "$txtdomain" | cut -d'.' -f2-)
+  if [ -z "$domain" ] || [ -z "$txtdomain" ]; then
     _err "We weren't able to determine the records which need to be created."
     return 1
   fi
-
-  _debug "Domain: ${domain}       TXTDomain: ${subdomain}     Subdomain: ${txtdomain}"
+  _debug "Domain: ${domain}       TXTDomain: ${txtdomain}"
 
   _domhost="${domain}"
   _txthost="${txtdomain}"
-  _subhost="${subdomain}"
   _debug "Domain: ${domain} found."
   return 0
 }
 
+_voidssystems_rest() {
+  mode=$1
+  request="$2"
+  data="$3"
+
+  export _H1="Content-Type: application/json"
+  export _H2="x-api-key: ${CLIENT_API_KEY}"
+
+  if [ "$mode" != "GET" ]; then
+    _debug data "$data"
+    response="$(_post "$data" "$API/$request" "" "$mode")"
+  else
+    response="$(_get "$API/$request")"
+  fi
+
+  if [ "$?" != "0" ]; then
+    _err "error $request"
+    return 1
+  fi
+  _debug2 response "$response"
+  return 0
+}
+
 _check_record() {
-  server_record="${API}?type=A&hostname=$_domhost"
-  txt_record="${API}?type=TXT&hostname=$_txthost"
+  server_record="?type=A&hostname=$_domhost"
+  txt_record="?type=TXT&hostname=$_txthost"
 
-  header="x-api-key: ${CLIENT_API_KEY}"
+  _debug "API ENDPOINTS ${server_record} ${txt_record} WITH HEADER ${apiH2}"
 
-  _debug "API ENDPOINTS ${server_record} ${txt_record} WITH HEADER ${header}"
-
-  response="$(_get "$server_record" "$header")"
+  response="$(_voidssystems_rest GET "$server_record")"
   if [ "$?" != "0" ]; then
     _err "error. failed access to end point"
     return 1
@@ -103,7 +119,7 @@ _check_record() {
     return 1
   fi
 
-  response="$(_get "$txt_record" "$header")"
+  response="$(_voidssystems_rest GET "$txt_record")"
   if [ "$?" != "0" ]; then
     _err "error. failed access to end point"
     return 1
@@ -117,20 +133,19 @@ _check_record() {
 
 _create_record() {
   _check_record
-  header="x-api-key: ${CLIENT_API_KEY}"
 
-  domain_data='{"type":"A", "hostname":"${_domhost}", "target":"${END_IP}"}'
-  txt_data='{"type":"TXT", "hostname":"${_txthost}", "target":"${txtvalue}"}'
+  domain_data="{\"type\":\"A\", \"hostname\":\"${_domhost}\", \"target\":\"${END_IP}\"}"
+  txt_data="{\"type\":\"TXT\", \"hostname\":\"${_txthost}\", \"target\":\"${txtvalue}\"}"
 
-  _debug "API ENDPOINTS ${API} WITH HEADER ${header} AND DATA "
+  _debug "API ENDPOINTS ${API} WITH HEADER ${apiH2} AND DATA ${domain_data} AND ${txt_data}"
 
-  response="$(_post "$API" "$header" "$domain_data")"
+  response="$(_voidssystems_rest POST "" "$domain_data")"
   if [ "$?" != "0" ]; then
     _err "error"
     return 1
   fi
 
-  response="$(_post "$api" "$header" "$txt_data")"
+  response="$(_voidssystems_rest POST "" "$txt_data")"
   if [ "$?" != "0" ]; then
     _err "error"
     return 1
@@ -140,20 +155,18 @@ _create_record() {
 }
 
 _remove_record() {
-  header="x-api-key: ${CLIENT_API_KEY}"
+  domain_data="{\"type\":\"A\", \"hostname\":\"${_domhost}\"}"
+  txt_data="{\"type\":\"TXT\", \"hostname\":\"${_txthost}\"}"
 
-  domain_data='{"type":"A", "hostname":"${_domhost}"}'
-  txt_data='{"type":"TXT", "hostname":"${_txthost}"}'
+  _debug "API ENDPOINTS ${API} WITH HEADER ${apiH2} AND DATA ${domain_data} AND ${txt_data}"
 
-  _debug "API ENDPOINTS ${API} WITH HEADER ${header} AND DATA "
-
-  response="$(_delete "$API" "$header" "$domain_data")"
+  response="$(_voidssystems_rest DELETE "" "$domain_data")"
   if [ "$?" != "0" ]; then
     _err "error"
     return 1
   fi
 
-  response="$(_delete "$API" "$header" "$txt_data")"
+  response="$(_voidssystems_rest DELETE "" "$txt_data")"
   if [ "$?" != "0" ]; then
     _err "error"
     return 1
